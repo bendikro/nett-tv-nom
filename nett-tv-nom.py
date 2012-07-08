@@ -56,7 +56,7 @@ def main():
     f.close()
 
     if parser.src == "":
-        sys.stderr.write("Unable to extract stream URL.\n")
+        print("Unable to extract stream URL.")
         exit(1)
 
     if args.play:
