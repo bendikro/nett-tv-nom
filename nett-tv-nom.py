@@ -1,5 +1,34 @@
 #!/usr/bin/env python3
 
+#
+# The new NRK Nett-TV provides high-quality web TV without using Flash
+# on platforms deemed "supported" [1]. Presently (July 2012), this
+# does not include Firefox on GNU/Linux, which gets served a
+# Flash-based player instead.
+#
+# This little program sends an appropriate user agent header (grabbed
+# from [1]) to Nett-TV and parses the reply to obtain the URL of a
+# video stream that can be used with any player that supports HLS. By
+# supplying the name of an ffplay/avplay-compatible executable after
+# the --play switch, it can also directly launch this player. You may
+# want to tweak the stream numbers.
+#
+# Example:
+# nett-tv-nom.py -p ffplay -a 7 -v 8 http://tv.nrk.no/serie/kveldsnytt/nnfa23070712/07-07-2012
+#
+# TODO:
+# - Add autodetection of various audio/video qualities.
+#
+# Copyright (2012) gspr
+# Licensed under the 3-clause BSD license.
+#
+# I am not in any way affiliated with NRK. Use of NRK Nett-TV is subject to
+# NRK's terms of service. [2]
+#
+# [1] http://nrkbeta.no/2012/04/23/test-nrks-splitter-nye-nett-tv/
+# [2] http://tv.nrk.no/
+#
+
 import argparse
 import urllib.request
 from html.parser import HTMLParser
