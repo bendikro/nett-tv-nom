@@ -39,11 +39,12 @@ DEFPLAYER="/usr/bin/ffplay"
 
 def main():
     argparser = argparse.ArgumentParser(description="Extract video stream from NRK Nett-TV")
-    argparser.add_argument("-p", "--play", help="Start playing stream with this ffplay-compatible player. If omitted, simply print stream URL.", required=False)
-    argparser.add_argument("-v", "--video-stream", help="With --play, use this video stream.", required=False, default=8)
-    argparser.add_argument("-a", "--audio-stream", help="With --play, use this audio stream.", required=False, default=7)
+    argparser.add_argument("-p", "--player", help="Start playing stream with this ffplay-compatible player. Ignored when using -e. [%s]" %(DEFPLAYER), required=False, default=DEFPLAYER)
+    argparser.add_argument("-v", "--video-stream", help="With --play, use this video stream. [8]", required=False, default=8)
+    argparser.add_argument("-a", "--audio-stream", help="With --play, use this audio stream. [7]", required=False, default=7)
     argparser.add_argument("url", help="URL to parse")
-    argparser.add_argument("-u", "--user-agent", help="Send this user-agent header.", required=False, default=DEFAGENT)
+    argparser.add_argument("-u", "--user-agent", help="Send this user-agent header. [%s]" %DEFAGENT, required=False, default=DEFAGENT)
+    argparser.add_argument("-e", "--echo", action='store_true', help="Echo stream URL and exit instead of playing.", required=False)
     args = argparser.parse_args()
 
     opener = urllib.request.build_opener()
@@ -59,9 +60,12 @@ def main():
         print("Unable to extract stream URL.")
         exit(1)
 
-    if args.play:
-        print("Launching ffplay-compatible player %s." %(args.play))
-        p = subprocess.Popen([args.play, "-vst", str(args.video_stream), "-ast", str(args.audio_stream), parser.src])
+    if args.echo:
+        print(parser.src)
+        exit(0)
+    elif args.player:
+        print("Launching ffplay-compatible player %s." %(args.player))
+        p = subprocess.Popen([args.player, "-vst", str(args.video_stream), "-ast", str(args.audio_stream), parser.src])
         ret = p.wait()
         exit(ret)
     else:
@@ -73,9 +77,9 @@ def main():
 class Parser(HTMLParser):
     src = ""
     def handle_starttag(self, tag, attrs):
-        if tag == "video":
+        if tag == "div":
             for attr,val in attrs:
-                if attr == "src":
+                if attr == "data-media":
                     self.src = val
                     break
     
