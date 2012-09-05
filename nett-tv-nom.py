@@ -40,8 +40,8 @@ DEFPLAYER="/usr/bin/ffplay"
 def main():
     argparser = argparse.ArgumentParser(description="Extract video stream from NRK Nett-TV")
     argparser.add_argument("-p", "--player", help="Start playing stream with this ffplay-compatible player. Ignored when using -e. [%s]" %(DEFPLAYER), required=False, default=DEFPLAYER)
-    argparser.add_argument("-v", "--video-stream", help="With --play, use this video stream. [8]", required=False, default=8)
-    argparser.add_argument("-a", "--audio-stream", help="With --play, use this audio stream. [7]", required=False, default=7)
+    argparser.add_argument("-v", "--video-stream", help="With --player, use this video stream. [8]", required=False, default=8)
+    argparser.add_argument("-a", "--audio-stream", help="With --player, use this audio stream. [7]", required=False, default=7)
     argparser.add_argument("url", help="URL to parse")
     argparser.add_argument("-u", "--user-agent", help="Send this user-agent header. [%s]" %DEFAGENT, required=False, default=DEFAGENT)
     argparser.add_argument("-e", "--echo", action='store_true', help="Echo stream URL and exit instead of playing.", required=False)
