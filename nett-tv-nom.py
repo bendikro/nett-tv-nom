@@ -15,6 +15,7 @@ import datetime as dt
 
 DEFAGENT="Mozilla/5.0 (iPad; U; CPU OS OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10 (KHTML, like Gecko) Version/4.0.4 Mobile/7B367 Safari/531.21.10"
 DEFPLAYER="vlc"
+DEFAULT_STREAM=4
 
 import lxml.etree as et
 
@@ -65,13 +66,28 @@ class Subtitles(object):
         return ('%s --> %s' % (begin, end), text)
 
     def write_srt_file(self, subtitles, output_file, encoding):
-        fout = open(output_file, "w", encoding=encoding)
-        print("Saving subtitle with encoding: %s" % encoding)
+
+        def encode_error_handler(info):
+            s = info.object[info.start:info.end]
+            # Dash
+            charmap = {ord("\u2014"): "-"}
+            try:
+                return charmap[ord(s)], info.end
+            except KeyError:
+                # Return empty
+                return ("", info.end)
+        import codecs
+        codecs.register_error("encode_error", encode_error_handler)
+
+        fout = open(output_file, "w", encoding=encoding, errors='encode_error')
         for i, s in enumerate(subtitles):
-            fout.write("%d\n" % i)
-            fout.write("%s\n" % s[0])
-            fout.write("%s\n" % s[1])
-            fout.write("\n")
+            try:
+                fout.write("%d\n" % i)
+                fout.write("%s\n" % s[0])
+                fout.write("%s\n" % s[1])
+                fout.write("\n")
+            except (Exception) as e:
+                print("Failed to write to file: '%s. Error:'" % s[1], e)
         fout.close()
 
     def xml2srt(self, xmltext):
@@ -117,7 +133,7 @@ def print_examples():
     examples = """Examples:
 
 Play stream with default player (vlc)
-nrk-nett-tv.py -p http://tv.nrk.no/serie/kveldsnytt/nnfa23070712/07-07-2012
+nrk-nett-tv.py http://tv.nrk.no/serie/kveldsnytt/nnfa23070712/07-07-2012
 
 Play stream with mplayer
 nrk-nett-tv.py -p mplayer http://tv.nrk.no/serie/kveldsnytt/nnfa23070712/07-07-2012
@@ -150,39 +166,45 @@ class Parser(HTMLParser):
                 if attr == "data-subtitlesurl":
                     self.subs = val
 
+def print_stream(streams, verbose):
+    for i, s in enumerate(streams):
+        print("Stream %d: %s" % (i, s[0]))
+        if verbose:
+            print("%s\n" % (s[1]))
+
 def main():
-    argparser = argparse.ArgumentParser(description="Extract video stream from NRK Nett-TV", add_help=False)
+    argparser = argparse.ArgumentParser(description="Extract video stream from NRK Nett-TV")
     argparser.add_argument("-o", "--output-file",  help="Save stream to disk with vlc.", required=False)
     argparser.add_argument("-p", "--player", nargs='?',
-                           help="Play the stream. Default player: %s" % DEFPLAYER,
-                           required=False, const=DEFPLAYER, default=DEFPLAYER)
+                           help="Play the stream with the specified player. Default player: %s" % DEFPLAYER,
+                           required=False, const=DEFPLAYER)
     argparser.add_argument("-l", "--list-streams", action='store_true',
-                           help="Show the available streams.", required=False)
-    argparser.add_argument("-s", "--subtitle-file", help="Fetch subtitle and save to file.",
-                           default="latin1", required=False)
-    argparser.add_argument("-se", "--subtitle-encoding", help="Save subtitle with the specified encoding.",
+                           help="Show list of available streams.", required=False)
+    argparser.add_argument("-s", "--stream-info", action='store_true',
+                           help="Show info about this streams.", required=False)
+    argparser.add_argument("-sf", "--subtitle-file", help="Fetch subtitle and save to file.",
                            required=False)
-    argparser.add_argument("-vs", "--video-stream", help="With -p, use this video stream. [4]",
-                           required=False, default=4)
-    argparser.add_argument("url", help="URL to parse")
+    argparser.add_argument("-se", "--subtitle-encoding", help="Save subtitle with the specified encoding.",
+                           default="latin1", required=False)
+    argparser.add_argument("-si", "--stream-index", help="With -p, use this stream. Default:[%d]" % DEFAULT_STREAM,
+                           required=False, default=DEFAULT_STREAM)
     argparser.add_argument("-u", "--user-agent", help="Send this user-agent header. Defaults to [%s]" % DEFAGENT,
                            required=False, default=DEFAGENT)
-    argparser.add_argument("-e", "--echo", action='store_true',
-                           help="Echo stream URL and exit instead of playing.", required=False)
     argparser.add_argument("--examples", action='store_true', help="Print examples.", required=False)
     argparser.add_argument("-v", "--verbose", action='store_true', help="Be verbose.", required=False)
-    argparser.add_argument("-h", "--help", action='store_true', help="Show usage.", required=False)
+    argparser.add_argument("url", help="URL to parse")
     argparser.add_argument('args_to_forward',
                            help='Remaining arguments after the url are passed to the invoked program.',
                            nargs=argparse.REMAINDER)
     args = argparser.parse_args()
 
-    if args.help:
-        argparser.print_help()
-        exit()
-    elif args.examples:
+    if args.examples:
         print_examples()
-        exit()
+        exit(0)
+
+    # No option arguments provided, use player as default
+    if not (args.stream_info or args.list_streams or args.subtitle_file or args.output_file or args.player):
+        args.player = DEFPLAYER
 
     opener = urllib.request.build_opener()
     opener.addheaders = [("User-agent", args.user_agent)]
@@ -195,31 +217,32 @@ def main():
         print("Unable to extract stream URL.")
         exit(1)
 
-    if args.echo:
-        print("Manifest  url:", parser.src)
+    if args.stream_info:
+        print("\nStream info (%s)\n" % args.url)
+        print("Manifest: ", parser.src)
         if hasattr(parser, "subs"):
-            print("Subtitles url: %s%s" % (args.url, parser.subs))
+            print("Subtitles: %s%s" % (args.url, parser.subs))
         else:
             print("No subtitles found.")
-        exit(0)
-    elif args.list_streams:
+        print()
+        streams = get_available_stream_info(parser.src, args.user_agent)
+        print_stream(streams, True)
+    if args.list_streams:
         print("\nAvailable streams:")
         streams = get_available_stream_info(parser.src, args.user_agent)
-        for i, s in enumerate(streams):
-            print("Stream %d: %s\nUrl:%s\n" % (i, s[0], s[1]))
-        if hasattr(parser, "subs"):
-            print("Subtitles url: %s%s" % (args.url, parser.subs))
-        exit(0)
-    elif args.subtitle_file:
+        print_stream(streams, False)
+    if args.subtitle_file:
         if hasattr(parser, "subs"):
             subs_url = "http://tv.nrk.no%s" % parser.subs
             sub = Subtitles(subs_url, args.subtitle_file, args.subtitle_encoding)
+            if args.verbose:
+                print("Subtitle fetched from %s and saved to %s" % (subs_url, args.subtitle_file))
         else:
             print("No subtitles available.")
     if args.output_file or args.player:
         streams = get_available_stream_info(parser.src, args.user_agent)
-        if int(args.video_stream) >= len(streams):
-            print("Invalid video stream index: %d" % args.video_stream)
+        if int(args.stream_index) >= len(streams):
+            print("Invalid stream index: %s" % args.stream_index)
             exit(0)
         arglist = []
         executable = None
@@ -244,16 +267,13 @@ def main():
 
         cmd = [executable]
         cmd.extend(arglist)
-        cmd.append(streams[int(args.video_stream)][1])
+        cmd.append(streams[int(args.stream_index)][1])
 
         if args.verbose:
             print("Executing command:", cmd)
         p = subprocess.Popen(cmd)
         ret = p.wait()
         exit(ret)
-    else:
-        print(parser.src)
-        exit(0)
     exit(0)
 
 if __name__ == "__main__":
