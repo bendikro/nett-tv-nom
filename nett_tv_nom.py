@@ -142,11 +142,12 @@ def get_available_stream_info(url, args):
     manifest_data = read_url(url, args.user_agent)
     lines = manifest_data.splitlines()
     streams = []
+    stream_url_base = url.replace("master.m3u8", "")
 
     i = 0
     while i < len(lines):
-        if lines[i].startswith("http"):
-            streams.append((lines[i - 1], lines[i]))
+        if not lines[i].startswith("#"):
+            streams.append((lines[i - 1], stream_url_base + lines[i]))
             i += 1
         i += 1
     return streams
@@ -238,11 +239,20 @@ class Parser(HTMLParser):
 
         if tag == "meta":
             attrs_dict = dict(attrs)
-            if "property" in attrs_dict and "content" in attrs_dict:
-                if attrs_dict["property"] == "og:video":
-                    # Should look like "http://tv.nrk.no/serie/mammon"
-                    self.base_url = attrs_dict["content"]
-                    self.season_link = self.base_url
+
+            if attrs_dict.get("name", None) == 'programid':
+                self.programid = attrs_dict["content"]
+                self.mediaelement = "https://psapi-we.nrk.no/mediaelement/%s" % self.programid
+
+            if attrs_dict.get("name", None) and attrs_dict.get('content', None) == 'episode':
+                self.type = "episode"
+
+            if attrs_dict.get("property", None) == 'og:url':
+                # Should look like "http://tv.nrk.no/serie/mammon"
+                print("URL:", attrs_dict)
+                self.base_url = attrs_dict["content"]
+                self.season_link = self.base_url
+
 
     def handle_endtag(self, tag):
         if not self.tag_level[-1][0] == tag:
@@ -280,6 +290,7 @@ def process_stream(stream_list, index, args):
         print("Processing stream:", stream_list[index])
 
     streams = get_available_stream_info(stream_list[index]["manifest_url"], args)
+
     # The stream quality
     if int(args.stream_index) >= len(streams):
         print("Invalid stream index: %s" % args.stream_index)
@@ -373,19 +384,25 @@ def parse_url(url, args):
     parser.feed(page_data)
     f.close()
 
+    programid = read_url(parser.mediaelement, args.user_agent)
+    import json
+    j = json.loads(programid)
+    # Url to the manifest file
+    parser.src = j["mediaUrl"]
+
     if args.debug:
         global page_content_count
         page_content_count += 1
         page_content_filename = "page_content_%d.html" % page_content_count
         print("Writing page content to %s" % page_content_filename)
         html_output = open(page_content_filename, "w")
-        html_output.write(page_data)
+        html_output.write(page_data.encode('utf-8'))
         html_output.close()
         # Season page doesn't have src
         if parser.src:
             manifest_data = read_url(parser.src, args.user_agent)
             manifest_output = open("manifest_%d.m3u8" % page_content_count, "w")
-            manifest_output.write(manifest_data)
+            manifest_output.write(manifest_data.encode('utf-8'))
     return parser
 
 
