@@ -30,7 +30,7 @@ DEFPLAYER = "vlc"
 DEFAULT_STREAM = 4
 VLC_PATH = ""
 
-__version__ = "1.0"
+__version__ = "1.0.1"
 
 try:
     from termcolor import cprint
@@ -142,7 +142,9 @@ def get_available_stream_info(url, args):
     manifest_data = read_url(url, args.user_agent)
     lines = manifest_data.splitlines()
     streams = []
-    stream_url_base = url.replace("master.m3u8", "")
+    stream_url_base = url[0:url.index("master.m3u8")]
+    if args.verbose > 1:
+        print("Stream base URL: '%s'" % stream_url_base)
 
     i = 0
     while i < len(lines):
@@ -239,7 +241,6 @@ class Parser(HTMLParser):
 
         if tag == "meta":
             attrs_dict = dict(attrs)
-
             if attrs_dict.get("name", None) == 'programid':
                 self.programid = attrs_dict["content"]
                 self.mediaelement = "https://psapi-we.nrk.no/mediaelement/%s" % self.programid
@@ -249,7 +250,6 @@ class Parser(HTMLParser):
 
             if attrs_dict.get("property", None) == 'og:url':
                 # Should look like "http://tv.nrk.no/serie/mammon"
-                print("URL:", attrs_dict)
                 self.base_url = attrs_dict["content"]
                 self.season_link = self.base_url
 
@@ -403,6 +403,7 @@ def parse_url(url, args):
             manifest_data = read_url(parser.src, args.user_agent)
             manifest_output = open("manifest_%d.m3u8" % page_content_count, "w")
             manifest_output.write(manifest_data.encode('utf-8'))
+            manifest_output.close()
     return parser
 
 
