@@ -19,10 +19,13 @@ import lxml.etree as et
 try:
     from urllib import request
     from html.parser import HTMLParser
+    from urllib.parse import unquote
 except:
     # Python 2.7
     import urllib2 as request
+    from urllib import unquote
     from HTMLParser import HTMLParser
+
 
 DEFAGENT = "Mozilla/5.0 (iPad; U; CPU OS OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10"\
            "(KHTML, like Gecko) Version/4.0.4 Mobile/7B367 Safari/531.21.10"
@@ -30,7 +33,7 @@ DEFPLAYER = "vlc"
 DEFAULT_STREAM = 4
 VLC_PATH = ""
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 try:
     from termcolor import cprint
@@ -88,29 +91,16 @@ class Subtitles(object):
         self.write_srt_file(self.subtitles, self.output_file, self.encoding)
 
     def write_srt_file(self, subtitles, output_file, encoding):
-
-        def encode_error_handler(info):
-            s = info.object[info.start:info.end]
-            # Dash
-            charmap = {ord("\u2014"): "-"}
-            try:
-                return charmap[ord(s)], info.end
-            except KeyError:
-                # Return empty
-                return ("", info.end)
         import codecs
-        codecs.register_error("encode_error", encode_error_handler)
-
-        fout = open(output_file, "w", encoding=encoding, errors='encode_error')
-        for i, s in enumerate(subtitles):
-            try:
-                fout.write("%d\n" % i)
-                fout.write("%s\n" % s[0])
-                fout.write("%s\n" % s[1])
-                fout.write("\n")
-            except (Exception) as e:
-                print("Failed to write to file: '%s. Error:'" % s[1], e)
-        fout.close()
+        with codecs.open(output_file, "w", encoding="utf-8") as fout:
+            for i, s in enumerate(subtitles):
+                try:
+                    fout.write("%d\n" % i)
+                    fout.write("%s\n" % s[0])
+                    fout.write("%s\n" % s[1])
+                    fout.write("\n")
+                except (Exception) as e:
+                    print("Failed to write to file: '%s. Error:'" % s[1], e)
 
     def xml2srt(self, xmltext):
         tree = et.fromstring(xmltext)
@@ -149,7 +139,10 @@ def get_available_stream_info(url, args):
     i = 0
     while i < len(lines):
         if not lines[i].startswith("#"):
-            streams.append((lines[i - 1], stream_url_base + lines[i]))
+            stream_url = lines[i]
+            if not stream_url.startswith("http"):
+                stream_url = stream_url_base + lines[i]
+            streams.append((lines[i - 1], stream_url))
             i += 1
         i += 1
     return streams
@@ -389,19 +382,25 @@ def parse_url(url, args):
     j = json.loads(programid)
     # Url to the manifest file
     parser.src = j["mediaUrl"]
+    parser.subs = j["mediaAssets"][0].get("timedTextSubtitlesUrl", None)
+    if parser.subs:
+        parser.subs = unquote(parser.subs)
 
     if args.debug:
         global page_content_count
         page_content_count += 1
         page_content_filename = "page_content_%d.html" % page_content_count
         print("Writing page content to %s" % page_content_filename)
-        html_output = open(page_content_filename, "w")
-        html_output.write(page_data.encode('utf-8'))
-        html_output.close()
+        with open(page_content_filename, 'wb') as html_output:
+            html_output.write(page_data.encode('utf-8'))
+
+        with open("media_%d.json" % page_content_count, 'w') as json_output:
+            json_output.write(str(j))
+
         # Season page doesn't have src
         if parser.src:
             manifest_data = read_url(parser.src, args.user_agent)
-            manifest_output = open("manifest_%d.m3u8" % page_content_count, "w")
+            manifest_output = open("manifest_%d.m3u8" % page_content_count, "wb")
             manifest_output.write(manifest_data.encode('utf-8'))
             manifest_output.close()
     return parser
@@ -569,7 +568,7 @@ def handle_media(parser, args):
         for s in streams_list:
             if s["subtitle"]:
                 subs_found = True
-                subs_url = "http://tv.nrk.no%s" % s["subtitle"]
+                subs_url = s["subtitle"]
                 sub_filename = "%s%s" % (args.subtitle_file, s["title_postfix"])
                 if not sub_filename.endswith(".srt"):
                     sub_filename += ".srt"
