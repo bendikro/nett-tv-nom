@@ -10,19 +10,27 @@ from __future__ import print_function
 
 import argparse
 import datetime as dt
+import json
 import os
 import subprocess
+import re
 import time
 
 import lxml.etree as et
 
 try:
+    from termcolor import cprint
+except:
+    cprint = print
+
+try:
     from urllib import request
     from html.parser import HTMLParser
-    from urllib.parse import unquote
+    from urllib.parse import unquote, urljoin
 except:
     # Python 2.7
     import urllib2 as request
+    from urlparse import urljoin
     from urllib import unquote
     from HTMLParser import HTMLParser
 
@@ -30,15 +38,10 @@ except:
 DEFAGENT = "Mozilla/5.0 (iPad; U; CPU OS OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10"\
            "(KHTML, like Gecko) Version/4.0.4 Mobile/7B367 Safari/531.21.10"
 DEFPLAYER = "vlc"
-DEFAULT_STREAM = 4
+DEFAULT_STREAM = -1
 VLC_PATH = ""
 
-__version__ = "1.0.2"
-
-try:
-    from termcolor import cprint
-except:
-    cprint = print
+__version__ = "1.0.3"
 
 
 class Subtitles(object):
@@ -132,7 +135,8 @@ def get_available_stream_info(url, args):
     manifest_data = read_url(url, args.user_agent)
     lines = manifest_data.splitlines()
     streams = []
-    stream_url_base = url[0:url.index("master.m3u8")]
+    stream_url_base = os.path.dirname(url) + "/"
+
     if args.verbose > 1:
         print("Stream base URL: '%s'" % stream_url_base)
 
@@ -141,7 +145,7 @@ def get_available_stream_info(url, args):
         if not lines[i].startswith("#"):
             stream_url = lines[i]
             if not stream_url.startswith("http"):
-                stream_url = stream_url_base + lines[i]
+                stream_url = urljoin(stream_url_base, lines[i])
             streams.append((lines[i - 1], stream_url))
             i += 1
         i += 1
@@ -203,6 +207,11 @@ class Parser(HTMLParser):
         self.subs = None
         self.tag_level = []
         self.base_url = None
+        self.programid = None
+
+    @property
+    def mediaelement(self):
+        return "https://psapi-we.nrk.no/mediaelement/%s" % self.programid
 
     def handle_starttag(self, tag, attrs):
         self.tag_level.append((tag, attrs))
@@ -236,7 +245,6 @@ class Parser(HTMLParser):
             attrs_dict = dict(attrs)
             if attrs_dict.get("name", None) == 'programid':
                 self.programid = attrs_dict["content"]
-                self.mediaelement = "https://psapi-we.nrk.no/mediaelement/%s" % self.programid
 
             if attrs_dict.get("name", None) and attrs_dict.get('content', None) == 'episode':
                 self.type = "episode"
@@ -245,7 +253,6 @@ class Parser(HTMLParser):
                 # Should look like "http://tv.nrk.no/serie/mammon"
                 self.base_url = attrs_dict["content"]
                 self.season_link = self.base_url
-
 
     def handle_endtag(self, tag):
         if not self.tag_level[-1][0] == tag:
@@ -288,6 +295,17 @@ def process_stream(stream_list, index, args):
     if int(args.stream_index) >= len(streams):
         print("Invalid stream index: %s" % args.stream_index)
         exit(0)
+    elif args.stream_index == -1:
+        # Find the best quality video stream
+        max_width = 0
+        for i, s in enumerate(streams):
+            m = re.match(".*RESOLUTION=(?P<width>\d+)x(?P<height>\d+).*", s[0])
+            if m:
+                width = int(m.groupdict()["width"])
+                if max_width < width:
+                    args.stream_index = i
+                    max_width = width
+
     arglist = []
     executable = None
     # This must be done with vlc
@@ -332,8 +350,8 @@ def process_stream(stream_list, index, args):
     cmd.extend(arglist)
 
     if args.verbose > 2:
-        for s in streams:
-            print("Stream:", s)
+        for i, s in enumerate(streams):
+            print("Stream(%s): %s" % ("*" if int(args.stream_index) == i else " ", str(s)))
     cmd.append(streams[int(args.stream_index)][1])
 
     # Make vlc close when finished
@@ -367,35 +385,35 @@ def process_stream(stream_list, index, args):
 
 page_content_count = 0
 
-
 def parse_url(url, args):
-    opener = request.build_opener()
-    opener.addheaders = [("User-agent", args.user_agent)]
-    f = opener.open(url)
+    global page_content_count
+    page_data = read_url(url, args.user_agent)
     parser = Parser()
-    page_data = f.read().decode("utf-8")
     parser.feed(page_data)
-    f.close()
-
-    programid = read_url(parser.mediaelement, args.user_agent)
-    import json
-    j = json.loads(programid)
-    # Url to the manifest file
-    parser.src = j["mediaUrl"]
-    parser.subs = j["mediaAssets"][0].get("timedTextSubtitlesUrl", None)
-    if parser.subs:
-        parser.subs = unquote(parser.subs)
 
     if args.debug:
-        global page_content_count
         page_content_count += 1
         page_content_filename = "page_content_%d.html" % page_content_count
         print("Writing page content to %s" % page_content_filename)
         with open(page_content_filename, 'wb') as html_output:
             html_output.write(page_data.encode('utf-8'))
 
+    if not parser.programid:
+        # This may be live TV
+        cprint("mediaelement attribute not found!", "red")
+        parser.programid =  os.path.basename(parser.base_url)
+
+    programid = read_url(parser.mediaelement, args.user_agent)
+    json_data = json.loads(programid)
+    # Url to the manifest file
+    parser.src = json_data["mediaUrl"]
+    parser.subs = json_data["mediaAssets"][0].get("timedTextSubtitlesUrl", None)
+    if parser.subs:
+        parser.subs = unquote(parser.subs)
+
+    if args.debug:
         with open("media_%d.json" % page_content_count, 'w') as json_output:
-            json_output.write(str(j))
+            json_output.write(str(json_data))
 
         # Season page doesn't have src
         if parser.src:

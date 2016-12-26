@@ -13,6 +13,7 @@ setup(name='nett-tv-nom',
       py_modules=["nett_tv_nom"],
       install_requires=[
           'termcolor',
+          'lxml',
       ],
       entry_points = {'console_scripts': ['nett_tv_nom = nett_tv_nom:main']},
       classifiers=[
