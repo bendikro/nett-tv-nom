@@ -2,7 +2,7 @@
 #
 # A simple python script to fetch and play video from nrk nett-tv.
 #
-# Copyright (2012-2014) gspr, bro
+# Copyright (2012-2016) gspr, bro
 # Licensed under the 3-clause BSD license.
 #
 
