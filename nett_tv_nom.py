@@ -16,7 +16,6 @@ import subprocess
 import re
 import time
 
-import lxml.etree as et
 
 try:
     from termcolor import cprint
@@ -41,7 +40,7 @@ DEFPLAYER = "vlc"
 DEFAULT_STREAM = -1
 VLC_PATH = ""
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 
 class Subtitles(object):
@@ -106,6 +105,7 @@ class Subtitles(object):
                     print("Failed to write to file: '%s. Error:'" % s[1], e)
 
     def xml2srt(self, xmltext):
+        import lxml.etree as et
         tree = et.fromstring(xmltext)
         namepsace = tree.nsmap[None]
         tags = {}
@@ -400,8 +400,9 @@ def parse_url(url, args):
 
     if not parser.programid:
         # This may be live TV
-        cprint("mediaelement attribute not found!", "red")
         parser.programid =  os.path.basename(parser.base_url)
+        if args.debug:
+            print("mediaelement attribute not found. Presume live stream and get programid from base_url: %s" % parser.programid)
 
     programid = read_url(parser.mediaelement, args.user_agent)
     json_data = json.loads(programid)
