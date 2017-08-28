@@ -18,10 +18,14 @@ import lxml.etree as et
 
 try:
     from urllib import request
+    from urllib.error import HTTPError
+    import urllib.parse as urlparse
     from html.parser import HTMLParser
 except:
     # Python 2.7
     import urllib2 as request
+    import urlparse
+    from urllib2 import HTTPError
     from HTMLParser import HTMLParser
 
 DEFAGENT = "Mozilla/5.0 (iPad; U; CPU OS OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10"\
@@ -427,19 +431,18 @@ def handle_media(parser, args):
                     ep_url = season_parser.base_url + "/" + ep_data["attrs"]["data-episode"]
                     # print("EPURL:", ep_url)
                 # print("LINK:", ep_data["link"])
-                import urllib.parse
-                ep_link = urllib.parse.urljoin(season_parser.base_url, ep_data["link"])
+                ep_link = urlparse.urljoin(season_parser.base_url, ep_data["link"])
                 if ep_url not in ep_link:
                     print("Links are differing: '%s', '%s'" % (ep_url, ep_link))
                 e_parser = None
                 try:
                     e_parser = parse_url(ep_url, args)
-                except urllib.error.HTTPError as e:
-                    print("Failed to parse link '%s'" % ep_url)
+                except HTTPError as e:
+                    print("Failed to parse link '%s': %s" % (ep_url, e))
                 if not e_parser:
                     try:
                         e_parser = parse_url(ep_link, args)
-                    except urllib.error.HTTPError as e:
+                    except HTTPError as e:
                         print("Failed to parse link '%s'" % ep_url)
                         print("Failed to find a valid episode link!")
                         continue
